@@ -1,5 +1,7 @@
 # Fusée Gelée
 
+This fork adds support for Termux, an app that allows code to execute in userspace on Android.
+
 ```
                                       *     .--.
                                            / /  `
