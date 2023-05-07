@@ -153,6 +153,22 @@ class MacOSBackend(HaxBackend):
         return self.dev.ctrl_transfer(self.STANDARD_REQUEST_DEVICE_TO_HOST_TO_ENDPOINT, self.GET_STATUS, 0, 0, length)
 
 
+class TermuxBackend(MacOSBackend):
+    """
+    Vulnerability trigger for Termux on Android (which runs without being rooted).
+    """
+    
+    BACKEND_NAME = "Termux"
+    SUPPORTED_SYSTEMS = ['Termux', 'libusbhax']
+    
+    def find_device(self, fd):
+        """ Set and return the device to be used """
+
+        import usb
+
+        self.dev = usb.core.device_from_fd(fd)
+        return self.dev
+
 
 class LinuxBackend(HaxBackend):
     """
@@ -446,7 +462,7 @@ class RCMHax:
     COPY_BUFFER_ADDRESSES   = [0x40005000, 0x40009000]   # The addresses of the DMA buffers we can trigger a copy _from_.
     STACK_END               = 0x40010000                 # The address just after the end of the device's stack.
 
-    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, override_checks=False):
+    def __init__(self, wait_for_device=False, os_override=None, vid=None, pid=None, fd=None, override_checks=False):
         """ Set up our RCM hack connection."""
 
         # The first write into the bootROM touches the lowbuffer.
@@ -463,7 +479,7 @@ class RCMHax:
             sys.exit(-1)
 
         # Grab a connection to the USB device itself.
-        self.dev = self._find_device(vid, pid)
+        self.dev = self._find_device(vid, pid, fd)
 
         # If we don't have a device...
         if self.dev is None:
@@ -472,7 +488,7 @@ class RCMHax:
             if wait_for_device:
                 print("Waiting for a TegraRCM device to come online...")
                 while self.dev is None:
-                    self.dev = self._find_device(vid, pid)
+                    self.dev = self._find_device(vid, pid, fd)
 
             # ... or bail out.
             else:
@@ -485,12 +501,16 @@ class RCMHax:
         print("Identified a {} system; setting up the appropriate backend.".format(self.backend.BACKEND_NAME))
 
 
-    def _find_device(self, vid=None, pid=None):
+    def _find_device(self, vid=None, pid=None, fd=None):
         """ Attempts to get a connection to the RCM device with the given VID and PID. """
 
         # Apply our default VID and PID if neither are provided...
         vid = vid if vid else self.DEFAULT_VID
         pid = pid if pid else self.DEFAULT_PID
+        
+        # RCM device has already been selected by file descriptor when using Termux
+        if self.backend.BACKEND_NAME == "Termux":
+            return self.backend.find_device(fd)
 
         # ... and use them to find a USB device.
         return self.backend.find_device(vid, pid)
@@ -568,6 +588,7 @@ def parse_usb_id(id):
 parser = argparse.ArgumentParser(description='launcher for the fusee gelee exploit (by @ktemkin)')
 parser.add_argument('payload', metavar='payload', type=str, help='ARM payload to be launched; should be linked at 0x40010000')
 parser.add_argument('-w', dest='wait', action='store_true', help='wait for an RCM connection if one isn\'t present')
+parser.add_argument('--file-descriptor', '-fd', metavar='file_descriptor', dest='fd', type=int, default=None, help='USB file descriptor for use with `termux-usb -r -e` on Android')
 parser.add_argument('-V', metavar='vendor_id', dest='vid', type=parse_usb_id, default=None, help='overrides the TegraRCM vendor ID')
 parser.add_argument('-P', metavar='product_id', dest='pid', type=parse_usb_id, default=None, help='overrides the TegraRCM product ID')
 parser.add_argument('--override-os', metavar='platform', dest='platform', type=str, default=None, help='overrides the detected OS; for advanced users only')
@@ -591,7 +612,7 @@ if not os.path.isfile(intermezzo_path):
 # Get a connection to our device.
 try:
     switch = RCMHax(wait_for_device=arguments.wait, vid=arguments.vid, 
-            pid=arguments.pid, os_override=arguments.platform, override_checks=arguments.skip_checks)
+                    pid=arguments.pid, fd=arguments.fd, os_override=arguments.platform, override_checks=arguments.skip_checks)
 except IOError as e:
     print(e)
     sys.exit(-1)
