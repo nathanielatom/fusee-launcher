@@ -51,6 +51,12 @@ STACK_SPRAY_END     = 0x40017000
 # GET_INTERFACE  to the INTERFACE triggers memcpy from 0x40003984
 # GET_STATUS     to the ENDPOINT  triggers memcpy from <on the stack>
 
+
+def all_subclasses(cls):
+    return set(cls.__subclasses__()).union(
+        [sub for child in cls.__subclasses__() for sub in all_subclasses(child)])
+
+
 class HaxBackend:
     """
     Base class for backends for the TegraRCM vuln.
@@ -105,7 +111,7 @@ class HaxBackend:
         """ Creates a backend object appropriate for the current OS. """
 
         # Search for a supportive backend, and try to create one.
-        for subclass in cls.__subclasses__():
+        for subclass in all_subclasses(cls):
             if subclass.supported(system_override):
                 return subclass(skip_checks=skip_checks)
 
@@ -159,7 +165,7 @@ class TermuxBackend(MacOSBackend):
     """
     
     BACKEND_NAME = "Termux"
-    SUPPORTED_SYSTEMS = ['Termux', 'libusbhax']
+    SUPPORTED_SYSTEMS = ['Termux']
     
     def find_device(self, fd):
         """ Set and return the device to be used """
@@ -167,6 +173,11 @@ class TermuxBackend(MacOSBackend):
         import usb
 
         self.dev = usb.core.device_from_fd(fd)
+        if self.dev.is_kernel_driver_active(0):
+            message = "Kernel driver is currently using the RCM USB device and has a lock on it!"
+            raise OSError(message)
+        self.dev.set_configuration()
+
         return self.dev
 
 

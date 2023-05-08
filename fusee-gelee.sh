@@ -4,7 +4,8 @@ usb=$(termux-usb -l | python -c """
 import sys, json
 usbs = json.load(sys.stdin)
 if len(usbs) != 1:
-    raise OSError('RCM USB device not plugged in, or too many devices!')
+    message = 'RCM USB device not plugged in, or too many devices!'
+    raise OSError(message)
 print(usbs[0])
 """) && \
 echo "Found USB device:" && \
